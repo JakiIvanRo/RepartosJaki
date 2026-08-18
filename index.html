@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Reparto y Firmas Pro</title>
+    <script src="https://jsdelivr.net"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: #f4f7f6; padding: 15px; display: flex; flex-direction: column; align-items: center; }
+        .app-container { width: 100%; max-width: 500px; background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        h2 { margin-bottom: 15px; color: #333; font-size: 1.4rem; text-align: center; }
+        
+        /* BUSCADOR CORREGIDO: Ocupa espacio real y visible permanentemente */
+        .search-box { width: 100%; padding: 14px; border: 2px solid #007bff; border-radius: 8px; font-size: 1.1rem; margin-bottom: 10px; outline: none; }
+        .client-list { border: 2px solid #ccc; border-radius: 8px; margin-bottom: 20px; background: white; max-height: 300px; overflow-y: auto; display: block; }
+        .client-item { padding: 14px; border-bottom: 1px solid #eee; cursor: pointer; background: #fff; }
+        .client-item:active, .client-item:hover { background-color: #e6f2ff; }
+        .client-item p { margin: 3px 0; font-size: 0.95rem; color: #444; }
+        .client-item .name { font-weight: bold; color: #007bff; font-size: 1.05rem; }
+        
+        .form-section { margin-top: 15px; border-top: 2px dashed #eee; padding-top: 15px; }
+        .info-field { margin-bottom: 10px; font-size: 0.95rem; color: #555; }
+        .info-field span { font-weight: bold; color: #222; }
+        .signature-container { margin: 15px 0; background: #fafafa; border: 2px dashed #ccc; border-radius: 8px; }
+        canvas { width: 100%; height: 200px; display: block; border-radius: 8px; touch-action: none; background: #fff; }
+        .btn { width: 100%; padding: 12px; font-size: 1rem; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; margin-top: 10px; text-align: center; }
+        .btn-primary { background-color: #28a745; color: white; }
+        .btn-secondary { background-color: #6c757d; color: white; font-size: 0.9rem; padding: 8px; }
+        .btn-admin { background-color: #ffc107; color: #212529; margin-top: 15px; border: 1px solid #d39e00; }
+        .success-msg { display: none; background-color: #d4edda; color: #155724; padding: 15px; border-radius: 8px; text-align: center; margin-top: 20px; font-weight: bold; }
+        .counter-badge { display: block; text-align: center; font-size: 0.85rem; color: #666; margin-top: 5px; font-weight: 500; }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <h2>🚚 Registro de Entregas</h2>
+    
+    <!-- Barra de búsqueda -->
+    <input type="text" id="search" class="search-box" placeholder="🔎 Escribe Dirección, Nombre o DNI...">
+    
+    <!-- Lista de Clientes (Corregida: siempre visible en la estructura) -->
+    <div id="clientList" class="client-list"></div>
+
+    <!-- Formulario para firmar -->
+    <div id="formSection" class="form-section" style="display: none;">
+        <h3>Datos de Entrega</h3>
+        <div class="info-field">👤 Cliente: <span id="infoName"></span></div>
+        <div class="info-field">🪪 DNI: <span id="infoDni"></span></div>
+        <div class="info-field">📍 Dirección: <span id="infoAddress"></span></div>
+        <div class="info-field">📅 Fecha: <span id="infoDate"></span></div>
+        
+        <label style="font-weight: bold; display: block; margin-top: 15px; color: #444;">✍️ Firma del Cliente en pantalla:</label>
+        <div class="signature-container">
+            <canvas id="signature-pad"></canvas>
+        </div>
+        <button type="button" class="btn btn-secondary" onclick="clearSignature()">Borrar y reintentar firma</button>
+        <button type="button" class="btn btn-primary" onclick="saveDelivery()">💾 Registrar Entrega Completa</button>
+    </div>
+
+    <div id="successMessage" class="success-msg">🎉 ¡Entrega guardada con éxito!</div>
+
+    <button type="button" class="btn btn-admin" onclick="enviarReporte()">📤 Enviar Reporte al Encargado</button>
+    <div id="counter" class="counter-badge">Entregas acumuladas en el teléfono: 0</div>
+</div>
+
+<script>
+    const TELEFONO_ENCARGADO = "54911XXXXXXXX"; 
+
+    // Base de datos de 41 clientes fijada de fábrica sin fallas
+    const clientesBase = [
+        { dni: "37210741", nombre: "Yamila", direccion: "Paso de Burgos" },
+        { dni: "37621015", nombre: "Andrea", direccion: "Melo Alcorta 5" },
+        { dni: "41113324", nombre: "Milagros", direccion: "Jose Maria Moreno 1152" },
+        { dni: "40427526", nombre: "Nazarena", direccion: "Maximo Paz 1341" },
+        { dni: "41022323", nombre: "Agustin", direccion: "Chile 1718" },
+        { dni: "24282715", nombre: "Daniel", direccion: "Uriarte 392" },
+        { dni: "41054211", nombre: "Yamil", direccion: "Sardou 352" },
+        { dni: "42754212", nombre: "Matias", direccion: "Taborda 4305" },
+        { dni: "41304521", nombre: "Julio", direccion: "Uriarte 871" },
+        { dni: "40135401", nombre: "Pam", direccion: "Uriarte 399" },
+        { dni: "35626781", nombre: "Eduardo", direccion: "Rucci 2410" },
+        { dni: "41354211", nombre: "Gaston", direccion: "Camargo 3900" },
+        { dni: "25114125", nombre: "Adriana", direccion: "Kloosterman" },
+        { dni: "23532158", nombre: "Analia", direccion: "Galicia 300" },
+        { dni: "11311421", nombre: "Melisa", direccion: "Av Pres Bernardino Rivadavia 2602" },
+        { dni: "35541201", nombre: "Carlo", direccion: "Coronel D'Elia 2175" },
+        { dni: "45012774", nombre: "Nika", direccion: "Paso de Burgos" },
+        { dni: "32432922", nombre: "Daniel", direccion: "Galicia 300" },
+        { dni: "41197171", nombre: "Gisela", direccion: "Emilio Castro 3268" },
+        { dni: "35147825", nombre: "Marcela", direccion: "San Martin 3675" },
+        { dni: "41102323", nombre: "Rocio", direccion: "Plumerillo 881" },
+        { dni: "35151521", nombre: "Luz", direccion: "Granville 2438" },
+        { dni: "31610220", nombre: "Mirta", direccion: "Ruben Dario 750" },
+        { dni: "31047121", nombre: "Sonia", direccion: "Av Peron" },
+        { dni: "35621121", nombre: "Aixa", direccion: "Plumerillo 881" },
+        { dni: "40154121", nombre: "Flor", direccion: "1 de Mayo 4217" },
+        { dni: "23610111", nombre: "Xavier", direccion: "Alcorta 69" },
+        { dni: "33617071", nombre: "Damian", direccion: "Uriarte 399" },
+        { dni: "23111054", nombre: "Andres", direccion: "Magallanes" },
+        { dni: "43543120", nombre: "Anibal", direccion: "Galicia 300" },
+        { dni: "34554120", nombre: "Julian", direccion: "Hipolito Yrigoyen 4127" },
+        { dni: "45012774", nombre: "Rocio", direccion: "Amsterdam 139" },
+        { dni: "41012541", nombre: "Flor", direccion: "Uriarte 399" },
+        { dni: "42378121", nombre: "Gisela", direccion: "Galicia 300" },
+        { dni: "41152243", nombre: "Valentina", direccion: "Av Pres Bernardino Rivadavia 2602" },
+        { dni: "41130825", nombre: "Melisa", direccion: "Mendez 1783" },
+        { dni: "43045892", nombre: "Jesus", direccion: "Yrigoyen 4127" },
+        { dni: "41551245", nombre: "Gisela", direccion: "Av Peron" },
+        { dni: "33781312", nombre: "Damian", direccion: "O'Higgins 891" },
+        { dni: "20741201", nombre: "Rocio", direccion: "Plumerillo 881" }
+    ];
+
+    let clienteSeleccionado = null;
+    let signaturePad = null;
+    const canvas = document.getElementById('signature-pad');
+    const searchInput = document.getElementById('search');
+    const listContainer = document.getElementById('clientList');
+
+    function actualizarContador() {
+        try {
+            const entregas = JSON.parse(localStorage.getItem('entregas_reparto')) || [];
+            document.getElementById('counter').innerText = `Entregas acumuladas en el teléfono: ${entregas.length}`;
+        } catch(e) {
+            document.getElementById('counter').innerText = `Entregas acumuladas (Vista Previa)`;
+        }
+    }
+
+    // BUSCADOR MEJORADO: Filtra instantáneamente y muestra los resultados fijos
+    function ejecutarBusqueda() {
+        const query = searchInput.value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        listContainer.innerHTML = '';
+
+        if (query === '') {
+            listContainer.innerHTML = '<div class="client-item" style="color:gray; text-align:center;">Escribe para buscar...</div>';
+            return;
+        }
+
+        const filtrados = clientesBase.filter(c => {
+            const direccionLimpia = c.direccion.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const nombreLimpio = c.nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            return direccionLimpia.includes(query) || c.dni.includes(query) || nombreLimpio.includes(query);
+        });
+
+        if (filtrados.length > 0) {
+            const fragment = document.createDocumentFragment();
+            filtrados.forEach(c => {
+                const div = document.createElement('div');
+                div.className = 'client-item';
+                div.innerHTML = `<p class="name">👤 ${c.nombre}</p>
+                                 <p>📍 Dirección: ${c.direccion}</p>
+                                 <p>🪪 DNI: ${c.dni}</p>`;
+                div.onclick = () => selectClient(c);
+                fragment.appendChild(div);
+            });
+            listContainer.appendChild(fragment);
+        } else {
+            listContainer.innerHTML = '<div class="client-item" style="color:gray; text-align:center;">No se encontraron resultados</div>';
+        }
+    }
+
+    // Escucha en tiempo real cada tecla presionada
+    searchInput.addEventListener('input', ejecutarBusqueda);
+
